@@ -1,6 +1,7 @@
 # Builds the extension the same way SourceMod builds its own releases (sourcemod/.github/workflows/build-release.yml):
 # the AlliedModders build container on Linux, MSVC on Windows, and AMBuild with pinned SourceMod, Metamod:Source and
-# HL2SDK sources. Every push to master publishes a release.
+# HL2SDK sources. Every push to master publishes a release, and so does a manual run, which can build against other
+# SourceMod or Metamod:Source sources.
 name: Build
 on:
   push:
@@ -8,15 +9,30 @@ on:
       - master
   pull_request:
   workflow_dispatch:
+    inputs:
+      sourcemod_repo:
+        description: SourceMod repository to build against instead of alliedmodders/sourcemod
+        required: false
+      sourcemod_ref:
+        description: SourceMod commit or branch to build against instead of the pinned commit
+        required: false
+      mmsource_repo:
+        description: Metamod:Source repository to build against instead of alliedmodders/metamod-source
+        required: false
+      mmsource_ref:
+        description: Metamod:Source commit or branch to build against instead of the pinned commit
+        required: false
 env:
   # Left 4 Dead 2 dedicated servers are 32-bit only.
   ARCH: x86
   # SourceMod 1.12.0.7255.
-  SOURCEMOD_REF: 03865e00cc124221122ae9798ad38998566f9a2b
+  SOURCEMOD_REPO: ${{ inputs.sourcemod_repo || 'alliedmodders/sourcemod' }}
+  SOURCEMOD_REF: ${{ inputs.sourcemod_ref || '03865e00cc124221122ae9798ad38998566f9a2b' }}
   # SourceMod master, which carries the current public/sample_ext and public/sample_ext_nosdk.
   SOURCEMOD_SAMPLE_REF: b34de51b8c7f92fc2a7242fc0195e2d64a69cefd
   # Metamod:Source 1.12.0.1228. SourceMod builds against the 1.12-dev branch (tools/checkout-deps.sh).
-  MMSOURCE_REF: cb47755826fad1483291e5dc00222aa64303d12f
+  MMSOURCE_REPO: ${{ inputs.mmsource_repo || 'alliedmodders/metamod-source' }}
+  MMSOURCE_REF: ${{ inputs.mmsource_ref || 'cb47755826fad1483291e5dc00222aa64303d12f' }}
   # The Linux container ships its own AMBuild; Windows installs this one.
   AMBUILD_REF: d89ec91a7ac2607da07b50bb62346f9a10e9a998
 jobs:
@@ -54,7 +70,7 @@ jobs:
       - name: Checkout SourceMod
         uses: actions/checkout@v7
         with:
-          repository: alliedmodders/sourcemod
+          repository: ${{ env.SOURCEMOD_REPO }}
           ref: ${{ env.SOURCEMOD_REF }}
           path: dependencies/sourcemod
           submodules: recursive
@@ -72,7 +88,7 @@ jobs:
       - name: Checkout Metamod:Source
         uses: actions/checkout@v7
         with:
-          repository: alliedmodders/metamod-source
+          repository: ${{ env.MMSOURCE_REPO }}
           ref: ${{ env.MMSOURCE_REF }}
           path: dependencies/mmsource-1.12
           submodules: recursive
@@ -107,6 +123,15 @@ jobs:
         shell: bash
         run: |
           version="r$(git -C ../.. rev-list --count HEAD)-$(git -C ../.. rev-parse --short=7 HEAD)"
+          pinned=true
+          if [ -n "${{ inputs.sourcemod_repo }}${{ inputs.sourcemod_ref }}" ]; then
+            version="$version-sourcemod-$(git -C ../../../dependencies/sourcemod rev-parse --short=7 HEAD)"
+            pinned=false
+          fi
+          if [ -n "${{ inputs.mmsource_repo }}${{ inputs.mmsource_ref }}" ]; then
+            version="$version-mmsource-$(git -C ../../../dependencies/mmsource-1.12 rev-parse --short=7 HEAD)"
+            pinned=false
+          fi
           filename="SMExt-SourceScramble-${version}-${{ matrix.platform }}"
           if [ "${{ matrix.platform }}" == "windows" ]; then
             filename="$filename.zip"
@@ -116,6 +141,7 @@ jobs:
             tar zcf "$filename" addons
           fi
           echo "version=$version" >> $GITHUB_OUTPUT
+          echo "pinned=$pinned" >> $GITHUB_OUTPUT
           echo "filename=$filename" >> $GITHUB_OUTPUT
 
       - name: Upload package
@@ -125,7 +151,7 @@ jobs:
           path: extension/build/package/${{ steps.package.outputs.filename }}
 
       - name: Create Release
-        if: github.event_name == 'push'
+        if: github.event_name != 'pull_request'
         uses: ncipollo/release-action@v1.21.0
         with:
           # Windows and Linux packages upload to the same release.
@@ -137,5 +163,7 @@ jobs:
           artifactErrorsFailBuild: true
           tag: ${{ steps.package.outputs.version }}
           commit: ${{ github.sha }}
-          makeLatest: true
+          # Only builds of the pinned sources become the latest release.
+          makeLatest: ${{ steps.package.outputs.pinned }}
+          prerelease: ${{ steps.package.outputs.pinned != 'true' }}
           token: ${{ secrets.GITHUB_TOKEN }}
