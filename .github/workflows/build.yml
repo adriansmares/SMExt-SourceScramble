@@ -1,0 +1,136 @@
+# Builds the extension the same way SourceMod builds its own releases (sourcemod/.github/workflows/build-release.yml):
+# the AlliedModders build container on Linux, MSVC on Windows, and AMBuild with pinned SourceMod, Metamod:Source and
+# HL2SDK sources. Every push to master publishes a release.
+name: Build
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  workflow_dispatch:
+env:
+  # Left 4 Dead 2 dedicated servers are 32-bit only.
+  ARCH: x86
+  # SourceMod 1.13.0.7299.
+  SOURCEMOD_REF: 2e395c67870e0725cb8ad211be8bd881e83bccf3
+  # Metamod:Source 1.12.0.1228. SourceMod builds against the 1.12-dev branch (tools/checkout-deps.sh).
+  MMSOURCE_REF: cb47755826fad1483291e5dc00222aa64303d12f
+  # alliedmodders/hl2sdk, l4d2 branch.
+  HL2SDK_REF: 2a31cd007b2d7d2f964dc093eedcf7a812cf9dd6
+  HL2SDK_MANIFESTS_REF: 931f7aa57823c3bcf34f1867e28d8d12769a8ba7
+  # The Linux container ships its own AMBuild; Windows installs this one.
+  AMBUILD_REF: d89ec91a7ac2607da07b50bb62346f9a10e9a998
+jobs:
+  build:
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        include:
+          - platform: windows
+            os: windows-latest
+            python: python
+          - platform: linux
+            os: ubuntu-latest
+            python: python3
+            container_image: ghcr.io/alliedmodders/build-containers/debian11-clang22@sha256:eabe742aa7dfd5af548248ae4538ae2b03a38ceb7939ce8bd391d4374af3f02c
+      fail-fast: false
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    container:
+      image: ${{ matrix.container_image }}
+    steps:
+      # The container runs as root, while the workspace belongs to the runner user.
+      - name: Trust the workspace
+        shell: bash
+        run: git config --global --add safe.directory '*'
+
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          path: extension
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Checkout SourceMod
+        uses: actions/checkout@v7
+        with:
+          repository: alliedmodders/sourcemod
+          ref: ${{ env.SOURCEMOD_REF }}
+          path: dependencies/sourcemod
+          submodules: recursive
+
+      - name: Checkout Metamod:Source
+        uses: actions/checkout@v7
+        with:
+          repository: alliedmodders/metamod-source
+          ref: ${{ env.MMSOURCE_REF }}
+          path: dependencies/mmsource-1.12
+          submodules: recursive
+
+      - name: Checkout HL2SDK
+        uses: actions/checkout@v7
+        with:
+          repository: alliedmodders/hl2sdk
+          ref: ${{ env.HL2SDK_REF }}
+          path: dependencies/hl2sdk-l4d2
+
+      - name: Checkout HL2SDK manifests
+        uses: actions/checkout@v7
+        with:
+          repository: alliedmodders/hl2sdk-manifests
+          ref: ${{ env.HL2SDK_MANIFESTS_REF }}
+          path: dependencies/hl2sdk-manifests
+
+      - name: Install AMBuild
+        if: matrix.platform == 'windows'
+        run: python -m pip install git+https://github.com/alliedmodders/ambuild@${{ env.AMBUILD_REF }}
+
+      - name: Build
+        shell: bash
+        run: |
+          # github.workspace does not match $GITHUB_WORKSPACE in containerized jobs, see https://github.com/actions/runner/issues/2058
+          DEPS="$GITHUB_WORKSPACE/dependencies"
+          mkdir -p extension/build
+          cd extension/build
+          ${{ matrix.python }} ../configure.py --enable-optimize --sdks=l4d2 --sm-path=$DEPS/sourcemod --mms-path=$DEPS/mmsource-1.12 --hl2sdk-root=$DEPS --hl2sdk-manifest-path=$DEPS/hl2sdk-manifests --targets=${{ env.ARCH }} --no-plugins
+          ambuild
+
+      - name: Package
+        id: package
+        working-directory: extension/build/package
+        shell: bash
+        run: |
+          version="r$(git -C ../.. rev-list --count HEAD)-$(git -C ../.. rev-parse --short=7 HEAD)"
+          filename="SMExt-SourceScramble-${version}-${{ matrix.platform }}"
+          if [ "${{ matrix.platform }}" == "windows" ]; then
+            filename="$filename.zip"
+            7z a "$filename" addons
+          else
+            filename="$filename.tar.gz"
+            tar zcf "$filename" addons
+          fi
+          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "filename=$filename" >> $GITHUB_OUTPUT
+
+      - name: Upload package
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.platform }}
+          path: extension/build/package/${{ steps.package.outputs.filename }}
+
+      - name: Create Release
+        if: github.event_name == 'push'
+        uses: ncipollo/release-action@v1.21.0
+        with:
+          # Windows and Linux packages upload to the same release.
+          allowUpdates: true
+          replacesArtifacts: false
+          omitBodyDuringUpdate: true
+          omitNameDuringUpdate: true
+          artifacts: extension/build/package/${{ steps.package.outputs.filename }}
+          artifactErrorsFailBuild: true
+          tag: ${{ steps.package.outputs.version }}
+          commit: ${{ github.sha }}
+          makeLatest: true
+          token: ${{ secrets.GITHUB_TOKEN }}
