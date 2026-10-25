@@ -11,8 +11,10 @@ on:
 env:
   # Left 4 Dead 2 dedicated servers are 32-bit only.
   ARCH: x86
-  # SourceMod 1.13.0.7299.
-  SOURCEMOD_REF: 2e395c67870e0725cb8ad211be8bd881e83bccf3
+  # SourceMod 1.12.0.7255.
+  SOURCEMOD_REF: 03865e00cc124221122ae9798ad38998566f9a2b
+  # SourceMod master, which carries the current public/sample_ext and public/sample_ext_nosdk.
+  SOURCEMOD_SAMPLE_REF: b34de51b8c7f92fc2a7242fc0195e2d64a69cefd
   # Metamod:Source 1.12.0.1228. SourceMod builds against the 1.12-dev branch (tools/checkout-deps.sh).
   MMSOURCE_REF: cb47755826fad1483291e5dc00222aa64303d12f
   # The Linux container ships its own AMBuild; Windows installs this one.
@@ -57,6 +59,16 @@ jobs:
           path: dependencies/sourcemod
           submodules: recursive
 
+      - name: Checkout SourceMod sample extensions
+        uses: actions/checkout@v7
+        with:
+          repository: alliedmodders/sourcemod
+          ref: ${{ env.SOURCEMOD_SAMPLE_REF }}
+          path: dependencies/sourcemod-sample
+          sparse-checkout: |
+            public/sample_ext
+            public/sample_ext_nosdk
+
       - name: Checkout Metamod:Source
         uses: actions/checkout@v7
         with:
@@ -71,7 +83,7 @@ jobs:
         if: matrix.platform == 'linux'
         shell: bash
         run: |
-          template=dependencies/sourcemod/public/sample_ext_nosdk
+          template=dependencies/sourcemod-sample/public/sample_ext_nosdk
           diff -u "$template/configure.py" extension/configure.py
           sed -e "s#'-std=c++17'#'-std=c++20'#" -e "s#'/std:c++17'#'/std:c++20'#" "$template/AMBuildScript" | diff -u - extension/AMBuildScript
 
