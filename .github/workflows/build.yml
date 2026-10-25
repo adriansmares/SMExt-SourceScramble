@@ -15,9 +15,6 @@ env:
   SOURCEMOD_REF: 2e395c67870e0725cb8ad211be8bd881e83bccf3
   # Metamod:Source 1.12.0.1228. SourceMod builds against the 1.12-dev branch (tools/checkout-deps.sh).
   MMSOURCE_REF: cb47755826fad1483291e5dc00222aa64303d12f
-  # alliedmodders/hl2sdk, l4d2 branch.
-  HL2SDK_REF: 2a31cd007b2d7d2f964dc093eedcf7a812cf9dd6
-  HL2SDK_MANIFESTS_REF: 931f7aa57823c3bcf34f1867e28d8d12769a8ba7
   # The Linux container ships its own AMBuild; Windows installs this one.
   AMBUILD_REF: d89ec91a7ac2607da07b50bb62346f9a10e9a998
 jobs:
@@ -68,19 +65,15 @@ jobs:
           path: dependencies/mmsource-1.12
           submodules: recursive
 
-      - name: Checkout HL2SDK
-        uses: actions/checkout@v7
-        with:
-          repository: alliedmodders/hl2sdk
-          ref: ${{ env.HL2SDK_REF }}
-          path: dependencies/hl2sdk-l4d2
-
-      - name: Checkout HL2SDK manifests
-        uses: actions/checkout@v7
-        with:
-          repository: alliedmodders/hl2sdk-manifests
-          ref: ${{ env.HL2SDK_MANIFESTS_REF }}
-          path: dependencies/hl2sdk-manifests
+      # configure.py and AMBuildScript are SourceMod's public/sample_ext_nosdk, compiled as C++20 instead of C++17. Everything specific to this
+      # extension belongs in AMBuilder and PackageScript.
+      - name: Check the build scripts against the template
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          template=dependencies/sourcemod/public/sample_ext_nosdk
+          diff -u "$template/configure.py" extension/configure.py
+          sed -e "s#'-std=c++17'#'-std=c++20'#" -e "s#'/std:c++17'#'/std:c++20'#" "$template/AMBuildScript" | diff -u - extension/AMBuildScript
 
       - name: Install AMBuild
         if: matrix.platform == 'windows'
@@ -93,7 +86,7 @@ jobs:
           DEPS="$GITHUB_WORKSPACE/dependencies"
           mkdir -p extension/build
           cd extension/build
-          ${{ matrix.python }} ../configure.py --enable-optimize --sdks=l4d2 --sm-path=$DEPS/sourcemod --mms-path=$DEPS/mmsource-1.12 --hl2sdk-root=$DEPS --hl2sdk-manifest-path=$DEPS/hl2sdk-manifests --targets=${{ env.ARCH }} --no-plugins
+          ${{ matrix.python }} ../configure.py --enable-optimize --targets=${{ env.ARCH }} --sm-path=$DEPS/sourcemod --mms-path=$DEPS/mmsource-1.12
           ambuild
 
       - name: Package
