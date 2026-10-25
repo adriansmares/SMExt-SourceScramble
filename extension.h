@@ -116,4 +116,11 @@ public:
 #endif
 };
 
+/**
+ * Plugins compiled against SourceMod 1.13 or later take an Address as an int64. A native returning one receives a
+ * hidden first parameter that points at where to store it, which shifts the other parameters by one.
+ */
+int AddressParamOffset(IPluginContext *pContext);
+cell_t ReturnAddress(IPluginContext *pContext, const cell_t *params, uintptr_t address);
+
 #endif // _INCLUDE_SOURCEMOD_EXTENSION_PROPER_H_
