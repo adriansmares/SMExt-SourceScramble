@@ -26,8 +26,8 @@ env:
   # Left 4 Dead 2 dedicated servers are 32-bit only.
   ARCH: x86
   # SourceMod 1.12.0.7255.
-  SOURCEMOD_REPO: ${{ inputs.sourcemod_repo || 'alliedmodders/sourcemod' }}
-  SOURCEMOD_REF: ${{ inputs.sourcemod_ref || '03865e00cc124221122ae9798ad38998566f9a2b' }}
+  SOURCEMOD_REPO: ${{ inputs.sourcemod_repo || 'adriansmares/sourcemod' }}
+  SOURCEMOD_REF: ${{ inputs.sourcemod_ref || 'ad1d9864490f229fe9af4ba6b569367247409c77' }}
   # SourceMod master, which carries the current public/sample_ext and public/sample_ext_nosdk.
   SOURCEMOD_SAMPLE_REF: b34de51b8c7f92fc2a7242fc0195e2d64a69cefd
   # Metamod:Source 1.12.0.1228. SourceMod builds against the 1.12-dev branch (tools/checkout-deps.sh).
