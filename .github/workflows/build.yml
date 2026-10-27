@@ -25,7 +25,7 @@ on:
 env:
   # Left 4 Dead 2 dedicated servers are 32-bit only.
   ARCH: x86
-  # SourceMod 1.12.0.7255.
+  # Our SourceMod fork, at the commit the servers run.
   SOURCEMOD_REPO: ${{ inputs.sourcemod_repo || 'adriansmares/sourcemod' }}
   SOURCEMOD_REF: ${{ inputs.sourcemod_ref || 'ad1d9864490f229fe9af4ba6b569367247409c77' }}
   # SourceMod master, which carries the current public/sample_ext and public/sample_ext_nosdk.
@@ -38,7 +38,7 @@ env:
 jobs:
   build:
     permissions:
-      contents: write
+      contents: read
     strategy:
       matrix:
         include:
@@ -51,6 +51,9 @@ jobs:
             container_image: ghcr.io/alliedmodders/build-containers/debian11-clang22@sha256:eabe742aa7dfd5af548248ae4538ae2b03a38ceb7939ce8bd391d4374af3f02c
       fail-fast: false
     name: ${{ matrix.platform }}
+    outputs:
+      version: ${{ steps.package.outputs.version }}
+      pinned: ${{ steps.package.outputs.pinned }}
     runs-on: ${{ matrix.os }}
     container:
       image: ${{ matrix.container_image }}
@@ -150,20 +153,29 @@ jobs:
           name: ${{ matrix.platform }}
           path: extension/build/package/${{ steps.package.outputs.filename }}
 
+  # One job publishes both packages, so the platform builds never race to create the release.
+  release:
+    if: github.event_name != 'pull_request'
+    needs: build
+    permissions:
+      contents: write
+    name: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@v8
+        with:
+          path: packages
+          merge-multiple: true
+
       - name: Create Release
-        if: github.event_name != 'pull_request'
         uses: ncipollo/release-action@v1.21.0
         with:
-          # Windows and Linux packages upload to the same release.
-          allowUpdates: true
-          replacesArtifacts: false
-          omitBodyDuringUpdate: true
-          omitNameDuringUpdate: true
-          artifacts: extension/build/package/${{ steps.package.outputs.filename }}
+          artifacts: packages/*
           artifactErrorsFailBuild: true
-          tag: ${{ steps.package.outputs.version }}
+          tag: ${{ needs.build.outputs.version }}
           commit: ${{ github.sha }}
           # Only builds of the pinned sources become the latest release.
-          makeLatest: ${{ steps.package.outputs.pinned }}
-          prerelease: ${{ steps.package.outputs.pinned != 'true' }}
+          makeLatest: ${{ needs.build.outputs.pinned }}
+          prerelease: ${{ needs.build.outputs.pinned != 'true' }}
           token: ${{ secrets.GITHUB_TOKEN }}
