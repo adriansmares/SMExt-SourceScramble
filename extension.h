@@ -38,6 +38,7 @@
  */
 
 #include "smsdk_ext.h"
+#include <IPluginSys.h>
 
 
 /**
@@ -115,17 +116,5 @@ public:
 	//virtual bool SDK_OnMetamodPauseChange(bool paused, char *error, size_t maxlength);
 #endif
 };
-
-/**
- * Plugins compiled against SourceMod 1.13 or later take an Address as an int64. A native returning one receives a
- * hidden first parameter that points at where to store it, which shifts the other parameters by one.
- */
-int AddressParamOffset(IPluginContext *pContext);
-
-/**
- * Returns an address from a native, given the AddressParamOffset of the calling plugin. Plugins compiled before
- * SourceMod 1.13 take it as a single cell, so they cannot receive an address that does not fit in one.
- */
-cell_t ReturnAddress(IPluginContext *pContext, const cell_t *params, int offset, uintptr_t address);
 
 #endif // _INCLUDE_SOURCEMOD_EXTENSION_PROPER_H_

@@ -93,8 +93,7 @@ cell_t sm_MemoryBlockCreate(IPluginContext *pContext, const cell_t *params) {
 }
 
 cell_t sm_MemoryBlockPropAddressGet(IPluginContext *pContext, const cell_t *params) {
-	int offset = AddressParamOffset(pContext);
-	Handle_t hndl = static_cast<Handle_t>(params[1 + offset]);
+	Handle_t hndl = static_cast<Handle_t>(params[1 + AddressReturnOffset(pContext)]);
 	
 	MemoryBlock *pMemoryBlock;
 	HandleError err;
@@ -102,7 +101,7 @@ cell_t sm_MemoryBlockPropAddressGet(IPluginContext *pContext, const cell_t *para
 		return pContext->ThrowNativeError("Invalid MemoryBlock handle %x (error %d)", hndl, err);
 	}
 	
-	return ReturnAddress(pContext, params, offset, (uintptr_t) pMemoryBlock->block);
+	return ReturnAddress(pContext, params, pMemoryBlock->block);
 }
 
 cell_t sm_MemoryBlockLoadCellFromOffset(IPluginContext *pContext, const cell_t *params) {

@@ -179,8 +179,7 @@ cell_t sm_MemoryPatchDisable(IPluginContext *pContext, const cell_t *params) {
 }
 
 cell_t sm_MemoryPatchPropAddressGet(IPluginContext *pContext, const cell_t *params) {
-	int offset = AddressParamOffset(pContext);
-	Handle_t hndl = static_cast<Handle_t>(params[1 + offset]);
+	Handle_t hndl = static_cast<Handle_t>(params[1 + AddressReturnOffset(pContext)]);
 	
 	MemoryPatch *pMemoryPatch;
 	HandleError err;
@@ -188,5 +187,5 @@ cell_t sm_MemoryPatchPropAddressGet(IPluginContext *pContext, const cell_t *para
 		return pContext->ThrowNativeError("Invalid MemoryPatch handle %x (error %d)", hndl, err);
 	}
 	
-	return ReturnAddress(pContext, params, offset, pMemoryPatch->pAddress);
+	return ReturnAddress(pContext, params, reinterpret_cast<void*>(pMemoryPatch->pAddress));
 }
