@@ -1,5 +1,5 @@
 # vim: set sts=2 ts=8 sw=2 tw=99 et ft=python:
-import os, sys, shutil
+import os, sys
 
 # Simple extensions do not need to modify this file.
 
@@ -32,28 +32,8 @@ def SetArchFlags(compiler):
     if compiler.target.arch == 'x86_64':
       compiler.defines += ['WIN64']
 
-class ScriptingMixin:
-  # helper for building plugins
-  # call detectSPCompiler prior to running build scripts
+class ExtensionConfig(object):
   def __init__(self):
-    self.spcomp_bin = None
-    self.plugins = {}
-
-  def detectSPCompiler(self):
-    if builder.options.no_plugins:
-      return
-    spcomp_path = builder.options.spcomp_path
-    if not spcomp_path or not os.path.isdir(spcomp_path):
-      spcomp_found = shutil.which("spcomp")
-      if not spcomp_found:
-        raise Exception('Could not find a path for spcomp')
-    self.spcomp_bin = shutil.which('spcomp', path = spcomp_path)
-    if not self.spcomp_bin:
-      raise Exception('Could not find spcomp')
-
-class ExtensionConfig(ScriptingMixin, object):
-  def __init__(self):
-    super().__init__()
     self.binaries = []
     self.extensions = []
     self.generated_headers = None
@@ -65,9 +45,7 @@ class ExtensionConfig(ScriptingMixin, object):
     if builder.options.targets:
       target_archs = builder.options.targets.split(',')
     else:
-      target_archs = ['x86']
-      if builder.backend != 'amb2':
-        target_archs.append('x86_64')
+      target_archs = ['x86', 'x86_64']
 
     for arch in target_archs:
         try:
@@ -91,19 +69,6 @@ class ExtensionConfig(ScriptingMixin, object):
     return 'Release'
 
   def detectSDKs(self):
-    if builder.options.sm_path:
-      self.sm_root = builder.options.sm_path
-    else:
-      self.sm_root = ResolveEnvPath('SOURCEMOD112', 'sourcemod-1.12')
-      if not self.sm_root:
-        self.sm_root = ResolveEnvPath('SOURCEMOD', 'sourcemod')
-      if not self.sm_root:
-        self.sm_root = ResolveEnvPath('SOURCEMOD_DEV', 'sourcemod-central')
-
-    if not self.sm_root or not os.path.isdir(self.sm_root):
-      raise Exception('Could not find a source copy of SourceMod')
-    self.sm_root = Normalize(self.sm_root)
-
     if builder.options.mms_path:
       self.mms_root = builder.options.mms_path
     else:
@@ -111,11 +76,28 @@ class ExtensionConfig(ScriptingMixin, object):
       if not self.mms_root:
         self.mms_root = ResolveEnvPath('MMSOURCE', 'metamod-source')
       if not self.mms_root:
+        self.mms_root = ResolveEnvPath('MMSOURCE_DEV', 'metamod-source')
+      if not self.mms_root:
         self.mms_root = ResolveEnvPath('MMSOURCE_DEV', 'mmsource-central')
 
     if not self.mms_root or not os.path.isdir(self.mms_root):
       raise Exception('Could not find a source copy of Metamod:Source')
     self.mms_root = Normalize(self.mms_root)
+
+    if builder.options.sm_path:
+      self.sm_root = builder.options.sm_path
+    else:
+      self.sm_root = ResolveEnvPath('SOURCEMOD112', 'sourcemod-1.12')
+      if not self.sm_root:
+        self.sm_root = ResolveEnvPath('SOURCEMOD', 'sourcemod')
+      if not self.sm_root:
+        self.sm_root = ResolveEnvPath('SOURCEMOD_DEV', 'sourcemod')
+      if not self.sm_root:
+        self.sm_root = ResolveEnvPath('SOURCEMOD_DEV', 'sourcemod-central')
+
+    if not self.sm_root or not os.path.isdir(self.sm_root):
+      raise Exception('Could not find a source copy of SourceMod')
+    self.sm_root = Normalize(self.sm_root)
 
   def configure(self):
     
@@ -132,8 +114,8 @@ class ExtensionConfig(ScriptingMixin, object):
       if cxx.version < 1914 and builder.options.generator != 'vs':
         raise Exception(f'Only MSVC 2017 15.7 and later are supported, full C++17 support is required. ({str(cxx.version)} < 1914)')
     elif cxx.family == 'gcc':
-      if cxx.version < 'gcc-9':
-        raise Exception('Only GCC versions 9 or later are supported, full C++17 support is required.')
+      if cxx.version < 'gcc-8':
+        raise Exception('Only GCC versions 8 or later are supported, full C++17 support is required.')
     elif cxx.family == 'clang':
       if cxx.version < 'clang-5':
         raise Exception('Only clang versions 5 or later are supported, full C++17 support is required.')
@@ -143,7 +125,7 @@ class ExtensionConfig(ScriptingMixin, object):
     elif cxx.family == 'msvc':
       self.configure_msvc(cxx)
 
-    # Optimizaiton
+    # Optimization
     if builder.options.opt == '1':
       cxx.defines += ['NDEBUG']
 
@@ -158,14 +140,6 @@ class ExtensionConfig(ScriptingMixin, object):
       self.configure_mac(cxx)
     elif cxx.target.platform == 'windows':
       self.configure_windows(cxx)
-
-    # Arch-specifics; this is copied from hl2sdk-manifests (why??)
-    if cxx.target.arch == 'x86_64':
-      cxx.defines += ['X64BITS', 'PLATFORM_64BITS']
-
-    cxx.includes += [
-      os.path.join(builder.sourcePath, 'public'),
-    ]
 
   def configure_gcc(self, cxx):
     cxx.defines += [
@@ -186,10 +160,9 @@ class ExtensionConfig(ScriptingMixin, object):
       '-Wno-array-bounds',
       '-fvisibility=hidden',
     ]
+  
     if cxx.target.arch in ['x86', 'x86_64']:
       cxx.cflags += ['-msse']
-
-    cxx.cxxflags += ['-std=c++17']
 
     cxx.cxxflags += [
       '-fno-threadsafe-statics',
@@ -197,33 +170,15 @@ class ExtensionConfig(ScriptingMixin, object):
       '-Wno-overloaded-virtual',
       '-Wno-register',
       '-fvisibility-inlines-hidden',
+      '-std=c++20',
     ]
 
     have_gcc = cxx.family == 'gcc'
     have_clang = cxx.family == 'clang'
-    if cxx.version >= 'clang-3.9' or cxx.version == 'clang-3.4' or cxx.version > 'apple-clang-6.0':
-      cxx.cxxflags += ['-Wno-expansion-to-defined']
-    if cxx.version == 'clang-3.9' or cxx.version == 'apple-clang-8.0':
-      cxx.cflags += ['-Wno-varargs']
-    if cxx.version >= 'clang-3.4' or cxx.version >= 'apple-clang-7.0':
-      cxx.cxxflags += ['-Wno-inconsistent-missing-override']
-    if cxx.version >= 'clang-2.9' or cxx.version >= 'apple-clang-3.0':
-      cxx.cxxflags += ['-Wno-null-dereference']
-    if have_clang or (cxx.version >= 'gcc-4.6'):
-      cxx.cflags += ['-Wno-narrowing']
-    if have_clang or (cxx.version >= 'gcc-4.7'):
-      cxx.cxxflags += ['-Wno-delete-non-virtual-dtor']
-    if cxx.version >= 'gcc-4.8':
-      cxx.cflags += ['-Wno-unused-result']
-    if cxx.version >= 'gcc-9.0':
-      cxx.cxxflags += ['-Wno-class-memaccess', '-Wno-packed-not-aligned']
+
+    # Work around errors from smsdk_ext.cpp
     if have_clang:
       cxx.cxxflags += ['-Wno-implicit-exception-spec-mismatch']
-      if cxx.version >= 'apple-clang-5.1' or cxx.version >= 'clang-3.4':
-        cxx.cxxflags += ['-Wno-deprecated-register']
-      else:
-        cxx.cxxflags += ['-Wno-deprecated']
-      cxx.cflags += ['-Wno-sometimes-uninitialized']
 
     # Work around SDK warnings.
     if cxx.version >= 'clang-10.0' or cxx.version >= 'apple-clang-12.0':
@@ -262,7 +217,7 @@ class ExtensionConfig(ScriptingMixin, object):
       '/EHsc',
       '/GR-',
       '/TP',
-      '/std:c++17',
+      '/std:c++20',
     ]
     cxx.linkflags += [
       'kernel32.lib',
@@ -311,7 +266,7 @@ class ExtensionConfig(ScriptingMixin, object):
 
   def configure_windows(self, cxx):
     cxx.defines += ['WIN32', '_WINDOWS']
-
+	
   def ConfigureForExtension(self, context, compiler):
     compiler.cxxincludes += [
       os.path.join(context.currentSourcePath),
@@ -352,7 +307,6 @@ class ExtensionConfig(ScriptingMixin, object):
 
 Extension = ExtensionConfig()
 Extension.detectSDKs()
-Extension.detectSPCompiler()
 Extension.configure()
 
 # This will clone the list and each cxx object as we recurse, preventing child
@@ -362,16 +316,7 @@ builder.targets = builder.CloneableList(Extension.all_targets)
 # Add additional buildscripts here
 BuildScripts = [
   'AMBuilder',
+  'PackageScript',
 ]
-
-if not builder.options.no_plugins:
-  BuildScripts += [
-    'scripting/AMBuilder',
-  ]
-
-if builder.backend == 'amb2':
-  BuildScripts += [
-    'PackageScript',
-  ]
 
 builder.Build(BuildScripts, { 'Extension': Extension })
