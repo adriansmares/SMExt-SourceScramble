@@ -93,8 +93,7 @@ cell_t sm_MemoryBlockCreate(IPluginContext *pContext, const cell_t *params) {
 }
 
 cell_t sm_MemoryBlockPropAddressGet(IPluginContext *pContext, const cell_t *params) {
-#ifndef PLATFORM_64BITS
-	Handle_t hndl = static_cast<Handle_t>(params[1]);
+	Handle_t hndl = static_cast<Handle_t>(params[1 + AddressReturnOffset(pContext)]);
 	
 	MemoryBlock *pMemoryBlock;
 	HandleError err;
@@ -102,10 +101,7 @@ cell_t sm_MemoryBlockPropAddressGet(IPluginContext *pContext, const cell_t *para
 		return pContext->ThrowNativeError("Invalid MemoryBlock handle %x (error %d)", hndl, err);
 	}
 	
-	return (uintptr_t) pMemoryBlock->block;
-#else
-	return pContext->ThrowNativeError("MemoryBlock.Address is not implemented for 64-bit platforms");
-#endif
+	return ReturnAddress(pContext, params, pMemoryBlock->block);
 }
 
 cell_t sm_MemoryBlockLoadCellFromOffset(IPluginContext *pContext, const cell_t *params) {
