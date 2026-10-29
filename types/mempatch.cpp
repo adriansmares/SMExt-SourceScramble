@@ -179,8 +179,7 @@ cell_t sm_MemoryPatchDisable(IPluginContext *pContext, const cell_t *params) {
 }
 
 cell_t sm_MemoryPatchPropAddressGet(IPluginContext *pContext, const cell_t *params) {
-#ifndef PLATFORM_64BITS
-	Handle_t hndl = static_cast<Handle_t>(params[1]);
+	Handle_t hndl = static_cast<Handle_t>(params[1 + AddressReturnOffset(pContext)]);
 	
 	MemoryPatch *pMemoryPatch;
 	HandleError err;
@@ -188,8 +187,5 @@ cell_t sm_MemoryPatchPropAddressGet(IPluginContext *pContext, const cell_t *para
 		return pContext->ThrowNativeError("Invalid MemoryPatch handle %x (error %d)", hndl, err);
 	}
 	
-	return pMemoryPatch->pAddress;
-#else
-	return pContext->ThrowNativeError("MemoryPatch.Address is not implemented for 64-bit platforms");
-#endif
+	return ReturnAddress(pContext, params, reinterpret_cast<void*>(pMemoryPatch->pAddress));
 }
