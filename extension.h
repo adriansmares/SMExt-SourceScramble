@@ -38,6 +38,7 @@
  */
 
 #include "smsdk_ext.h"
+#include <IPluginSys.h>
 
 
 /**
