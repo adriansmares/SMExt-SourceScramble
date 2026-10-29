@@ -1,0 +1,181 @@
+# Builds the extension the same way SourceMod builds its own releases (sourcemod/.github/workflows/build-release.yml):
+# the AlliedModders build container on Linux, MSVC on Windows, and AMBuild with pinned SourceMod, Metamod:Source and
+# HL2SDK sources. Every push to master publishes a release, and so does a manual run, which can build against other
+# SourceMod or Metamod:Source sources.
+name: Build
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      sourcemod_repo:
+        description: SourceMod repository to build against instead of alliedmodders/sourcemod
+        required: false
+      sourcemod_ref:
+        description: SourceMod commit or branch to build against instead of the pinned commit
+        required: false
+      mmsource_repo:
+        description: Metamod:Source repository to build against instead of alliedmodders/metamod-source
+        required: false
+      mmsource_ref:
+        description: Metamod:Source commit or branch to build against instead of the pinned commit
+        required: false
+env:
+  # Left 4 Dead 2 dedicated servers are 32-bit only.
+  ARCH: x86
+  # Our SourceMod fork, at the commit the servers run.
+  SOURCEMOD_REPO: ${{ inputs.sourcemod_repo || 'adriansmares/sourcemod' }}
+  SOURCEMOD_REF: ${{ inputs.sourcemod_ref || '5724f588b014fe27d455d28bc0a0226aee6eda6a' }}
+  # SourceMod master, which carries the current public/sample_ext and public/sample_ext_nosdk.
+  SOURCEMOD_SAMPLE_REF: b34de51b8c7f92fc2a7242fc0195e2d64a69cefd
+  # Metamod:Source 1.12.0.1228. SourceMod builds against the 1.12-dev branch (tools/checkout-deps.sh).
+  MMSOURCE_REPO: ${{ inputs.mmsource_repo || 'alliedmodders/metamod-source' }}
+  MMSOURCE_REF: ${{ inputs.mmsource_ref || 'cb47755826fad1483291e5dc00222aa64303d12f' }}
+  # The Linux container ships its own AMBuild; Windows installs this one.
+  AMBUILD_REF: d89ec91a7ac2607da07b50bb62346f9a10e9a998
+jobs:
+  build:
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        include:
+          - platform: windows
+            os: windows-latest
+            python: python
+          - platform: linux
+            os: ubuntu-latest
+            python: python3
+            container_image: ghcr.io/alliedmodders/build-containers/debian11-clang22@sha256:eabe742aa7dfd5af548248ae4538ae2b03a38ceb7939ce8bd391d4374af3f02c
+      fail-fast: false
+    name: ${{ matrix.platform }}
+    outputs:
+      version: ${{ steps.package.outputs.version }}
+      pinned: ${{ steps.package.outputs.pinned }}
+    runs-on: ${{ matrix.os }}
+    container:
+      image: ${{ matrix.container_image }}
+    steps:
+      # The container runs as root, while the workspace belongs to the runner user.
+      - name: Trust the workspace
+        shell: bash
+        run: git config --global --add safe.directory '*'
+
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          path: extension
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Checkout SourceMod
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ env.SOURCEMOD_REPO }}
+          ref: ${{ env.SOURCEMOD_REF }}
+          path: dependencies/sourcemod
+          submodules: recursive
+
+      - name: Checkout SourceMod sample extensions
+        uses: actions/checkout@v7
+        with:
+          repository: alliedmodders/sourcemod
+          ref: ${{ env.SOURCEMOD_SAMPLE_REF }}
+          path: dependencies/sourcemod-sample
+          sparse-checkout: |
+            public/sample_ext
+            public/sample_ext_nosdk
+
+      - name: Checkout Metamod:Source
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ env.MMSOURCE_REPO }}
+          ref: ${{ env.MMSOURCE_REF }}
+          path: dependencies/mmsource-1.12
+          submodules: recursive
+
+      # configure.py and AMBuildScript are SourceMod's public/sample_ext_nosdk, compiled as C++20 instead of C++17. Everything specific to this
+      # extension belongs in AMBuilder and PackageScript.
+      - name: Check the build scripts against the template
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          template=dependencies/sourcemod-sample/public/sample_ext_nosdk
+          diff -u "$template/configure.py" extension/configure.py
+          sed -e "s#'-std=c++17'#'-std=c++20'#" -e "s#'/std:c++17'#'/std:c++20'#" "$template/AMBuildScript" | diff -u - extension/AMBuildScript
+
+      - name: Install AMBuild
+        if: matrix.platform == 'windows'
+        run: python -m pip install git+https://github.com/alliedmodders/ambuild@${{ env.AMBUILD_REF }}
+
+      - name: Build
+        shell: bash
+        run: |
+          # github.workspace does not match $GITHUB_WORKSPACE in containerized jobs, see https://github.com/actions/runner/issues/2058
+          DEPS="$GITHUB_WORKSPACE/dependencies"
+          mkdir -p extension/build
+          cd extension/build
+          ${{ matrix.python }} ../configure.py --enable-optimize --targets=${{ env.ARCH }} --sm-path=$DEPS/sourcemod --mms-path=$DEPS/mmsource-1.12
+          ambuild
+
+      - name: Package
+        id: package
+        working-directory: extension/build/package
+        shell: bash
+        run: |
+          version="r$(git -C ../.. rev-list --count HEAD)-$(git -C ../.. rev-parse --short=7 HEAD)"
+          pinned=true
+          if [ -n "${{ inputs.sourcemod_repo }}${{ inputs.sourcemod_ref }}" ]; then
+            version="$version-sourcemod-$(git -C ../../../dependencies/sourcemod rev-parse --short=7 HEAD)"
+            pinned=false
+          fi
+          if [ -n "${{ inputs.mmsource_repo }}${{ inputs.mmsource_ref }}" ]; then
+            version="$version-mmsource-$(git -C ../../../dependencies/mmsource-1.12 rev-parse --short=7 HEAD)"
+            pinned=false
+          fi
+          filename="SMExt-SourceScramble-${version}-${{ matrix.platform }}"
+          if [ "${{ matrix.platform }}" == "windows" ]; then
+            filename="$filename.zip"
+            7z a "$filename" addons
+          else
+            filename="$filename.tar.gz"
+            tar zcf "$filename" addons
+          fi
+          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "pinned=$pinned" >> $GITHUB_OUTPUT
+          echo "filename=$filename" >> $GITHUB_OUTPUT
+
+      - name: Upload package
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.platform }}
+          path: extension/build/package/${{ steps.package.outputs.filename }}
+
+  # One job publishes both packages, so the platform builds never race to create the release.
+  release:
+    if: github.event_name != 'pull_request'
+    needs: build
+    permissions:
+      contents: write
+    name: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@v8
+        with:
+          path: packages
+          merge-multiple: true
+
+      - name: Create Release
+        uses: ncipollo/release-action@v1.21.0
+        with:
+          artifacts: packages/*
+          artifactErrorsFailBuild: true
+          tag: ${{ needs.build.outputs.version }}
+          commit: ${{ github.sha }}
+          # Only builds of the pinned sources become the latest release.
+          makeLatest: ${{ needs.build.outputs.pinned }}
+          prerelease: ${{ needs.build.outputs.pinned != 'true' }}
+          token: ${{ secrets.GITHUB_TOKEN }}
