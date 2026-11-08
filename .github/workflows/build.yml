@@ -27,7 +27,7 @@ env:
   ARCH: x86
   # Our SourceMod fork, at the commit the servers run.
   SOURCEMOD_REPO: ${{ inputs.sourcemod_repo || 'adriansmares/sourcemod' }}
-  SOURCEMOD_REF: ${{ inputs.sourcemod_ref || 'ef09e994f00a2dddf68f01d288aee7825eb23da8' }}
+  SOURCEMOD_REF: ${{ inputs.sourcemod_ref || '7d70e869f9247a9366fc696d0f6f0661f1e42202' }}
   # SourceMod master, which carries the current public/sample_ext and public/sample_ext_nosdk.
   SOURCEMOD_SAMPLE_REF: b34de51b8c7f92fc2a7242fc0195e2d64a69cefd
   # Metamod:Source 1.12.0.1228. SourceMod builds against the 1.12-dev branch (tools/checkout-deps.sh).
