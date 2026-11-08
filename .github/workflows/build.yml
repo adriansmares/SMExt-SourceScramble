@@ -27,7 +27,7 @@ env:
   ARCH: x86
   # Our SourceMod fork, at the commit the servers run.
   SOURCEMOD_REPO: ${{ inputs.sourcemod_repo || 'adriansmares/sourcemod' }}
-  SOURCEMOD_REF: ${{ inputs.sourcemod_ref || 'a36aa80232ab2323d41aa48db73ec99ae1e4a96a' }}
+  SOURCEMOD_REF: ${{ inputs.sourcemod_ref || 'f3c322dcfdbd1ed445ddcba636afa10be71fa08a' }}
   # SourceMod master, which carries the current public/sample_ext and public/sample_ext_nosdk.
   SOURCEMOD_SAMPLE_REF: b34de51b8c7f92fc2a7242fc0195e2d64a69cefd
   # Metamod:Source 1.12.0.1228. SourceMod builds against the 1.12-dev branch (tools/checkout-deps.sh).
@@ -48,7 +48,8 @@ jobs:
           - platform: linux
             os: ubuntu-latest
             python: python3
-            container_image: ghcr.io/alliedmodders/build-containers/debian11-clang22@sha256:eabe742aa7dfd5af548248ae4538ae2b03a38ceb7939ce8bd391d4374af3f02c
+            # Debian 13, like our servers: the binaries need its glibc 2.38 and do not load on older releases.
+            container_image: ghcr.io/alliedmodders/build-containers/debian13-clang22@sha256:6f680e0c77cfd10696a8cecd14a3018bb910d046d0cbc641d89c3a3722f822c8
       fail-fast: false
     name: ${{ matrix.platform }}
     outputs:
